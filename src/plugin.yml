@@ -1,0 +1,10 @@
+name: Timberwolf
+version: 0.0.1
+author: Sam Wolfson
+main: com.samwolfson.timberwolf.Timberwolf
+api-version: 1.16
+commands:
+  undochop:
+    description: Undo your last tree chop.
+    usage: /undochop
+    permission: timberwolf.undochop
