@@ -1,0 +1,12 @@
+# list of tools that a player can use to chop a tree
+allowed-tools:
+  - IRON_AXE
+
+# list of blocks that are allowed to be directly adjacent to a log block
+# for example, dirt, grass, air, etc. the defaults here are reasonable.
+allowed-adjacent:
+  - DIRT
+  - COARSE_DIRT
+  - GRASS_BLOCK
+  - GRASS
+  - AIR

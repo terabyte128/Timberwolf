@@ -1,7 +1,10 @@
 package com.samwolfson.timberwolf;
 
-import java.nio.charset.spi.CharsetProvider;
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -15,15 +18,21 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class ChopListener implements Listener {
     final JavaPlugin plugin;
     final ChopCache chopCache;
+    final List<Material> allowedAdjacent;
+    final List<Material> allowedTools;
 
-    public ChopListener(JavaPlugin plugin, ChopCache chopCache) {
+    public ChopListener(JavaPlugin plugin, ChopCache chopCache, List<Material> allowedAdjacent, List<Material> allowedTools) {
         this.plugin = plugin;
         this.chopCache = chopCache;
+        this.allowedAdjacent = allowedAdjacent;
+        this.allowedTools = allowedTools;
     }
 
     private class TreeData {
@@ -48,11 +57,20 @@ public class ChopListener implements Listener {
         }
     };
 
-    // materials that may be next to a tree trunk
-    List<Material> ALLOWED_ADJACENT_MATERIALS = Arrays.asList(Material.DIRT, Material.GRASS_BLOCK, Material.COARSE_DIRT, Material.GRASS, Material.AIR);
-
     @EventHandler
     public void onDestroyWood(BlockBreakEvent e) {
+        // guard with permission
+        if (!e.getPlayer().hasPermission("timerwolf.chop")) {
+            return;
+        }
+
+        ItemStack itemInHand = e.getPlayer().getInventory().getItemInMainHand();
+
+        // restrict to specific tools
+        if (!allowedTools.contains(itemInHand.getType())) {
+            return;
+        }
+
         Block block = e.getBlock();
         Material logType = block.getType();
         World world = plugin.getServer().getWorld(block.getWorld().getUID());
@@ -77,6 +95,9 @@ public class ChopListener implements Listener {
         Set<Block> alreadyChecked = new HashSet<>();
 
         if (isTree(logType, block, alreadyChecked)) {
+            // don't drop items from this event
+            e.setDropItems(false);
+            
             // only destroy the logs
             List<Block> toDestroy = alreadyChecked.stream().filter(b -> b.getType().equals(logType)).collect(Collectors.toList());
 
@@ -95,28 +116,51 @@ public class ChopListener implements Listener {
             // give em the goods
             ItemStack woodDrop = new ItemStack(logType, toDestroy.size());
             world.dropItem(block.getLocation(), woodDrop);
+
+            // damage their tool appropriately
+            ItemMeta meta = itemInHand.getItemMeta();
+
+            if (meta instanceof Damageable) {
+                Damageable dm = (Damageable) meta;
+                dm.setDamage(dm.getDamage() + toDestroy.size());
+                itemInHand.setItemMeta((ItemMeta) dm);
+            }
         }
 
 
     }
 
+    /* 
+     * Get the 26 blocks that surround a block, i.e., each block in the 3x3x3
+     * cube of blocks around it, not including the block itself.
+     */
     private Block[] getSurroundingBlocks(Block b) {
-        Block[] surrounding = new Block[6];
-        surrounding[0] = b.getRelative(BlockFace.DOWN);
-        surrounding[1] = b.getRelative(BlockFace.UP);
-        surrounding[2] = b.getRelative(BlockFace.NORTH);
-        surrounding[3] = b.getRelative(BlockFace.EAST);
-        surrounding[4] = b.getRelative(BlockFace.SOUTH);
-        surrounding[5] = b.getRelative(BlockFace.WEST);
+        Location l = b.getLocation();
+        Block[] surrounding = new Block[26];
+
+        int i = 0;
+
+        // technically, this is O(1)
+        for (int x = l.getBlockX() - 1; x <= l.getBlockX() + 1; x++) {
+            for (int y = l.getBlockY() - 1; y <= l.getBlockY() + 1; y++) {
+                for (int z = l.getBlockZ() - 1; z <= l.getBlockZ() + 1; z++) {
+                    Block candidate = l.getWorld().getBlockAt(x, y, z);
+
+                    if (!candidate.equals(b))
+                        surrounding[i++] = candidate;
+                }
+            }
+        }
 
         return surrounding;
     }
 
+    /*
+     * Determine if the blocks surrounding current form a tree made of baseWood.
+     */
     public boolean isTree(Material baseWood, Block current, Set<Block> alreadyChecked) {
-        TreeData data = LOG_TO_TREE_DATA.get(baseWood);
-
         // if we hit leaves, then we reached the edge
-        if (current.getType().equals(data.leafMaterial)) {
+        if (current.getBlockData() instanceof Leaves) {
             Leaves leaves = (Leaves) current.getBlockData();
 
             // leaves on naturally generated trees are not persistent;
@@ -128,11 +172,12 @@ public class ChopListener implements Listener {
         // it's something that's allowed to be adjacent, then return true. If
         // not, return false.
         if (!current.getType().equals(baseWood)) {
-            return ALLOWED_ADJACENT_MATERIALS.contains(current.getType());
+            System.out.println(current.getType());
+            return allowedAdjacent.contains(current.getType());
         }
 
-        Block[] surroundingBlocks = getSurroundingBlocks(current);
         alreadyChecked.add(current);
+        Block[] surroundingBlocks = getSurroundingBlocks(current);
 
         for (Block b : surroundingBlocks) {
             if (!alreadyChecked.contains(b)) {

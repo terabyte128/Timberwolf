@@ -8,3 +8,9 @@ commands:
     description: Undo your last tree chop.
     usage: /undochop
     permission: timberwolf.undochop
+permissions:
+  timberwolf.undochop:
+    description: Allow player to undo tree chop.
+  timberwolf.chop:
+    description: Allow player to auto-chop trees.
+
