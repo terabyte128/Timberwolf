@@ -6,3 +6,4 @@ target/
 Timberwolf.iml
 .classpath
 *.swp
+.vscode

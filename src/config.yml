@@ -10,3 +10,6 @@ allowed-adjacent:
   - GRASS_BLOCK
   - GRASS
   - AIR
+
+# name of tool to use for chopping
+tool-name: Big Chopper

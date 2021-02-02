@@ -8,9 +8,21 @@ commands:
     description: Undo your last tree chop.
     usage: /undochop
     permission: timberwolf.undochop
+  listchops:
+    description: List all your chops.
+    usage: /listchops
+    permission: timberwolf.listchops
+  blesschop:
+    description: Bless a tool for chopping.
+    usage: /blesschop
+    permission: timberwolf.blesschop
 permissions:
   timberwolf.undochop:
     description: Allow player to undo tree chop.
+  timberwolf.listchops:
+    description: Allow player to list their chops.
   timberwolf.chop:
     description: Allow player to auto-chop trees.
+  timberwolf.blesschop:
+    description: Allow player to bless a tool for chopping.
 

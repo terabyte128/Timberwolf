@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -14,6 +15,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.type.Leaves;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -24,36 +26,31 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public class ChopListener implements Listener {
     final JavaPlugin plugin;
-    final ChopCache chopCache;
+    final Map<Player, Stack<ChopCache>> caches;
     final List<Material> allowedAdjacent;
     final List<Material> allowedTools;
+    final String toolName;
 
-    public ChopListener(JavaPlugin plugin, ChopCache chopCache, List<Material> allowedAdjacent, List<Material> allowedTools) {
+    public ChopListener(JavaPlugin plugin, Map<Player, Stack<ChopCache>> caches, List<Material> allowedAdjacent,
+            List<Material> allowedTools, String toolName) {
+        super();
         this.plugin = plugin;
-        this.chopCache = chopCache;
+        this.caches = caches;
         this.allowedAdjacent = allowedAdjacent;
         this.allowedTools = allowedTools;
+        this.toolName = toolName;
     }
 
-    private class TreeData {
-        public Material saplingMaterial;
-        public Material leafMaterial;
-
-        public TreeData(Material saplingMaterial, Material leafMaterial) {
-            this.saplingMaterial = saplingMaterial;
-            this.leafMaterial = leafMaterial;
-        }
-    }
-
-    // map log types to all of the other types that are associated with this tree type
-    Map<Material, TreeData> LOG_TO_TREE_DATA = new HashMap<>() {
+    // map log types to all of the other types that are associated with this tree
+    // type
+    Map<Material, Material> LOG_TO_SAPLING = new HashMap<>() {
         {
-            put(Material.ACACIA_LOG, new TreeData(Material.ACACIA_SAPLING, Material.ACACIA_LEAVES));
-            put(Material.BIRCH_LOG, new TreeData(Material.BIRCH_SAPLING, Material.BIRCH_LEAVES));
-            put(Material.DARK_OAK_LOG, new TreeData(Material.DARK_OAK_SAPLING, Material.DARK_OAK_LEAVES));
-            put(Material.JUNGLE_LOG, new TreeData(Material.JUNGLE_SAPLING, Material.JUNGLE_LEAVES));
-            put(Material.OAK_LOG, new TreeData(Material.OAK_SAPLING, Material.OAK_LEAVES));
-            put(Material.SPRUCE_LOG, new TreeData(Material.SPRUCE_SAPLING, Material.SPRUCE_LEAVES));
+            put(Material.ACACIA_LOG, Material.ACACIA_SAPLING);
+            put(Material.BIRCH_LOG, Material.BIRCH_SAPLING);
+            put(Material.DARK_OAK_LOG, Material.DARK_OAK_SAPLING);
+            put(Material.JUNGLE_LOG, Material.JUNGLE_SAPLING);
+            put(Material.OAK_LOG, Material.OAK_SAPLING);
+            put(Material.SPRUCE_LOG, Material.SPRUCE_SAPLING);
         }
     };
 
@@ -71,6 +68,12 @@ public class ChopListener implements Listener {
             return;
         }
 
+        // make sure the name matches
+        if (!itemInHand.getItemMeta().getDisplayName().equals(toolName)) {
+            e.getPlayer().sendMessage("You need to bless this tool before you can use it to chop.");
+            e.getPlayer().sendMessage("Use /blesschop to bless the tool in your hand.");
+        }
+
         Block block = e.getBlock();
         Material logType = block.getType();
         World world = plugin.getServer().getWorld(block.getWorld().getUID());
@@ -81,7 +84,7 @@ public class ChopListener implements Listener {
         }
 
         // must be a valid type of log
-        if (!LOG_TO_TREE_DATA.containsKey(block.getType())) {
+        if (!LOG_TO_SAPLING.containsKey(block.getType())) {
             return;
         }
 
@@ -97,13 +100,16 @@ public class ChopListener implements Listener {
         if (isTree(logType, block, alreadyChecked)) {
             // don't drop items from this event
             e.setDropItems(false);
-            
+
             // only destroy the logs
-            List<Block> toDestroy = alreadyChecked.stream().filter(b -> b.getType().equals(logType)).collect(Collectors.toList());
+            List<Block> toDestroy = alreadyChecked.stream().filter(b -> b.getType().equals(logType))
+                    .collect(Collectors.toList());
 
             // cache the last thing that a player chopped
             Set<Location> destroyedLocations = toDestroy.stream().map(Block::getLocation).collect(Collectors.toSet());
-            chopCache.setPlayerCache(e.getPlayer(), new ChopCache.PlayerCache(destroyedLocations, logType));
+
+            caches.putIfAbsent(e.getPlayer(), new Stack<ChopCache>());
+            caches.get(e.getPlayer()).push(new ChopCache(destroyedLocations, logType));
 
             // replace logs with air
             for (Block b : toDestroy) {
@@ -111,7 +117,8 @@ public class ChopListener implements Listener {
             }
 
             // schedule a new sapling to be planted
-            plugin.getServer().getScheduler().runTask(plugin, new ReplantTask(block.getLocation(), LOG_TO_TREE_DATA.get(logType).saplingMaterial));
+            plugin.getServer().getScheduler().runTask(plugin,
+                    new ReplantTask(block.getLocation(), LOG_TO_SAPLING.get(logType)));
 
             // give em the goods
             ItemStack woodDrop = new ItemStack(logType, toDestroy.size());
@@ -126,13 +133,11 @@ public class ChopListener implements Listener {
                 itemInHand.setItemMeta((ItemMeta) dm);
             }
         }
-
-
     }
 
-    /* 
-     * Get the 26 blocks that surround a block, i.e., each block in the 3x3x3
-     * cube of blocks around it, not including the block itself.
+    /*
+     * Get the 26 blocks that surround a block, i.e., each block in the 3x3x3 cube
+     * of blocks around it, not including the block itself.
      */
     private Block[] getSurroundingBlocks(Block b) {
         Location l = b.getLocation();
@@ -172,7 +177,6 @@ public class ChopListener implements Listener {
         // it's something that's allowed to be adjacent, then return true. If
         // not, return false.
         if (!current.getType().equals(baseWood)) {
-            System.out.println(current.getType());
             return allowedAdjacent.contains(current.getType());
         }
 

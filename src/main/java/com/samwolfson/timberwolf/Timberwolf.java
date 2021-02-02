@@ -1,13 +1,17 @@
 package com.samwolfson.timberwolf;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Stack;
 
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class Timberwolf extends JavaPlugin {
-    ChopCache chopCache;
+    Map<Player, Stack<ChopCache>> caches = new HashMap<>();
 
     private List<Material> stringToMaterial(List<String> strList) {
         List<Material> materials = new ArrayList<>(); 
@@ -35,17 +39,20 @@ public class Timberwolf extends JavaPlugin {
         // save config to plugin folder if it doesn't exist yet
         this.saveDefaultConfig();
 
-        List<String> allowedToolsStr = (List<String>) this.getConfig().getList("allowed-tools");
-        List<String> allowedAdjacentStr = (List<String>) this.getConfig().getList("allowed-adjacent");
+        List<Material> allowedTools = stringToMaterial(this.getConfig().getStringList("allowed-tools"));
+        List<Material> allowedAdjacent = stringToMaterial(this.getConfig().getStringList("allowed-adjacent"));
+        String toolName = this.getConfig().getString("tool-name");
 
-        chopCache = new ChopCache();
         this.getServer().getPluginManager().registerEvents(
-                new ChopListener(this, chopCache, 
-                    stringToMaterial(allowedAdjacentStr), 
-                    stringToMaterial(allowedToolsStr)
+                new ChopListener(this, caches, 
+                    allowedAdjacent, 
+                    allowedTools,
+                    toolName
                 ), 
                 this);
 
-        this.getCommand("undochop").setExecutor(new UndoCommand(chopCache));
+        this.getCommand("undochop").setExecutor(new UndoCommand(caches));
+        this.getCommand("listchops").setExecutor(new ListCommand(caches));
+        this.getCommand("blesschop").setExecutor(new BlessCommand(allowedTools, toolName));
     }
 }
